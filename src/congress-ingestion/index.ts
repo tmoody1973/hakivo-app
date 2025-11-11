@@ -169,7 +169,7 @@ export default class extends Service<Env> {
               }
             }
 
-            // Store subjects
+            // Store subjects and extract policy area
             if (detailedBill.subjects) {
               const subjects = transformSubjectsToDb(billId, detailedBill.subjects);
               for (const subject of subjects) {
@@ -177,8 +177,13 @@ export default class extends Service<Env> {
               }
             }
 
-            // Update bill with summary, full text URL, and full text content
+            // Update bill with summary, full text URL, policy area, and full text content
             let updates: any = { updated_at: new Date().toISOString() };
+
+            // Extract and store policy area in bills table
+            if (detailedBill.subjects?.policyArea?.name) {
+              updates.policy_area = detailedBill.subjects.policyArea.name;
+            }
 
             if (detailedBill.summaries && detailedBill.summaries.length > 0) {
               const summary = extractBillSummary(detailedBill.summaries);
