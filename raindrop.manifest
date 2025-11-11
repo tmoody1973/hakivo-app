@@ -5,9 +5,14 @@ application "hakivo-app" {
     visibility = "public"
   }
 
+  // Admin Dashboard
+  service "admin" {
+    visibility = "public"
+  }
+
   // Private Backend Services
   service "congress-ingestion" {
-    visibility = "private"
+    visibility = "public"  // Temporarily public for debugging
   }
 
   service "podcast-generator" {

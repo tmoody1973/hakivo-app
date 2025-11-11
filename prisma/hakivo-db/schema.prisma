@@ -50,7 +50,7 @@ model user_policy_interests {
 }
 
 model bills {
-  id                   String    @id
+  id                   String              @id
   congress             Int
   bill_type            String
   bill_number          Int
@@ -62,17 +62,28 @@ model bills {
   policy_area          String?
   status               String?
   full_text_url        String?
+  full_text            String?
   summary              String?
-  created_at           DateTime  @default(now())
-  updated_at           DateTime  @default(now()) @updatedAt
+  origin_chamber       String?
+  update_date          DateTime?
+  constitutional_authority_text String?
+  created_at           DateTime            @default(now())
+  updated_at           DateTime            @default(now()) @updatedAt
 
-  sponsor              members?  @relation(fields: [sponsor_id], references: [id])
+  sponsor              members?            @relation("BillSponsor", fields: [sponsor_id], references: [id])
+  cosponsors           bill_cosponsors[]
+  actions              bill_actions[]
+  committees           bill_committees[]
+  subjects             bill_subjects[]
+  amendments           amendments[]
+  related_bills        related_bills[]
 
   @@index([congress])
   @@index([policy_area])
   @@index([status])
   @@index([sponsor_id])
   @@index([latest_action_date])
+  @@index([bill_type])
 }
 
 model members {
@@ -80,6 +91,9 @@ model members {
   bioguide_id         String                 @unique
   first_name          String
   last_name           String
+  middle_name         String?
+  suffix              String?
+  nickname            String?
   party               String?
   state               String
   district            String?
@@ -88,11 +102,20 @@ model members {
   terms_served        Int                    @default(1)
   current_term_start  DateTime?
   current_term_end    DateTime?
+  office_address      String?
+  office_phone        String?
+  website_url         String?
+  twitter_handle      String?
+  youtube_channel     String?
+  facebook_page       String?
+  birth_year          Int?
   created_at          DateTime               @default(now())
   updated_at          DateTime               @default(now()) @updatedAt
 
-  bills               bills[]
+  bills               bills[]                @relation("BillSponsor")
+  cosponsored_bills   bill_cosponsors[]
   user_representatives user_representatives[]
+  committee_memberships member_committees[]
 
   @@index([bioguide_id])
   @@index([state])
@@ -203,4 +226,128 @@ model engagement_metrics {
   @@index([user_id])
   @@index([event_type])
   @@index([created_at])
+}
+
+// Congress.gov API related tables
+
+model bill_cosponsors {
+  id                Int      @id @default(autoincrement())
+  bill_id           String
+  member_id         String
+  sponsored_date    DateTime?
+  is_original_cosponsor Boolean @default(false)
+  created_at        DateTime @default(now())
+
+  bill              bills    @relation(fields: [bill_id], references: [id], onDelete: Cascade)
+  member            members  @relation(fields: [member_id], references: [id], onDelete: Cascade)
+
+  @@unique([bill_id, member_id])
+  @@index([bill_id])
+  @@index([member_id])
+}
+
+model bill_actions {
+  id          Int      @id @default(autoincrement())
+  bill_id     String
+  action_date DateTime
+  action_code String?
+  action_text String
+  action_type String?
+  created_at  DateTime @default(now())
+
+  bill        bills    @relation(fields: [bill_id], references: [id], onDelete: Cascade)
+
+  @@index([bill_id])
+  @@index([action_date])
+}
+
+model committees {
+  id              String             @id
+  name            String
+  chamber         String
+  committee_type  String?
+  parent_id       String?
+  created_at      DateTime           @default(now())
+  updated_at      DateTime           @default(now()) @updatedAt
+
+  bill_committees bill_committees[]
+  member_committees member_committees[]
+
+  @@index([chamber])
+}
+
+model bill_committees {
+  id         Int      @id @default(autoincrement())
+  bill_id    String
+  committee_id String
+  activity_type String?
+  created_at DateTime @default(now())
+
+  bill       bills    @relation(fields: [bill_id], references: [id], onDelete: Cascade)
+  committee  committees @relation(fields: [committee_id], references: [id], onDelete: Cascade)
+
+  @@unique([bill_id, committee_id])
+  @@index([bill_id])
+  @@index([committee_id])
+}
+
+model member_committees {
+  id          Int      @id @default(autoincrement())
+  member_id   String
+  committee_id String
+  rank        Int?
+  role        String?
+  start_date  DateTime?
+  end_date    DateTime?
+  created_at  DateTime @default(now())
+
+  member      members    @relation(fields: [member_id], references: [id], onDelete: Cascade)
+  committee   committees @relation(fields: [committee_id], references: [id], onDelete: Cascade)
+
+  @@unique([member_id, committee_id])
+  @@index([member_id])
+  @@index([committee_id])
+}
+
+model bill_subjects {
+  id         Int      @id @default(autoincrement())
+  bill_id    String
+  subject    String
+  created_at DateTime @default(now())
+
+  bill       bills    @relation(fields: [bill_id], references: [id], onDelete: Cascade)
+
+  @@index([bill_id])
+  @@index([subject])
+}
+
+model amendments {
+  id              String   @id
+  bill_id         String
+  amendment_number Int
+  amendment_type  String?
+  purpose         String?
+  sponsor_id      String?
+  submitted_date  DateTime?
+  status          String?
+  created_at      DateTime @default(now())
+  updated_at      DateTime @default(now()) @updatedAt
+
+  bill            bills    @relation(fields: [bill_id], references: [id], onDelete: Cascade)
+
+  @@index([bill_id])
+}
+
+model related_bills {
+  id                Int      @id @default(autoincrement())
+  bill_id           String
+  related_bill_id   String
+  relationship_type String?
+  created_at        DateTime @default(now())
+
+  bill              bills    @relation(fields: [bill_id], references: [id], onDelete: Cascade)
+
+  @@unique([bill_id, related_bill_id])
+  @@index([bill_id])
+  @@index([related_bill_id])
 }
