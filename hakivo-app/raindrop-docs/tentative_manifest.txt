@@ -1,0 +1,73 @@
+application "hakivo-app" {
+
+  // Public API Gateway
+  service "api-gateway" {
+    visibility = "public"
+  }
+
+  // Private Backend Services
+  service "congress-ingestion" {
+    visibility = "private"
+  }
+
+  service "podcast-generator" {
+    visibility = "private"
+  }
+
+  service "news-aggregator" {
+    visibility = "private"
+  }
+
+  service "auth-service" {
+    visibility = "private"
+  }
+
+  service "representative-lookup" {
+    visibility = "private"
+  }
+
+  service "bill-chat" {
+    visibility = "private"
+  }
+
+  service "voice-agent" {
+    visibility = "private"
+  }
+
+  // SQL Database for structured data
+  sql_database "hakivo-db" {}
+
+  // SmartBucket for bill semantic search
+  smartbucket "bills-bucket" {}
+
+  // Observers
+  observer "bill-ingestion-observer" {
+    source {
+      bucket = "bills-bucket"
+      rule {
+        actions = ["PutObject", "CompleteMultipartUpload"]
+      }
+    }
+  }
+
+  // Scheduled Tasks
+  task "podcast-scheduler" {
+    type = "cron"
+    cron = "0 6 * * *"  // Daily at 6 AM UTC
+  }
+
+  task "congress-sync-task" {
+    type = "cron"
+    cron = "0 */6 * * *"  // Every 6 hours
+  }
+
+  task "news-sync-task" {
+    type = "cron"
+    cron = "0 */2 * * *"  // Every 2 hours
+  }
+
+  // KV Cache for sessions and caching
+  kv_cache "session-cache" {}
+
+  kv_cache "api-cache" {}
+}

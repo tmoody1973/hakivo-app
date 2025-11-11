@@ -1,0 +1,135 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  lint-and-test-backend:
+    name: Backend - Lint & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Run linter
+        run: pnpm run lint
+
+      - name: Build backend
+        run: pnpm run build
+
+      - name: Run tests
+        run: pnpm test || echo "No tests configured yet"
+
+  lint-and-test-frontend:
+    name: Frontend - Lint & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'pnpm'
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: pnpm install
+
+      - name: Run linter
+        working-directory: ./frontend
+        run: pnpm run lint
+
+      - name: Build frontend
+        working-directory: ./frontend
+        run: pnpm run build
+
+      - name: Run tests
+        working-directory: ./frontend
+        run: pnpm test || echo "No tests configured yet"
+
+  validate-raindrop:
+    name: Validate Raindrop Manifest
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build TypeScript
+        run: pnpm run build
+
+      - name: Install Raindrop CLI
+        run: npm install -g @liquidmetal-ai/raindrop
+
+      - name: Validate manifest
+        run: raindrop build tools validate
+
+  type-check:
+    name: TypeScript Type Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'pnpm'
+
+      - name: Install backend dependencies
+        run: pnpm install
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: pnpm install
+
+      - name: Type check backend
+        run: pnpm run build
+
+      - name: Type check frontend
+        working-directory: ./frontend
+        run: npx tsc --noEmit

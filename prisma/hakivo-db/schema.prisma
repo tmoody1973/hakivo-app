@@ -1,0 +1,206 @@
+generator kysely {
+  provider = "prisma-kysely"
+
+  // Optionally provide a destination directory for the generated file
+  // and a filename of your choice
+  output       = "../../src/db/hakivoDb"
+  fileName     = "types.ts"
+  // Optionally generate runtime enums to a separate file
+  enumFileName = "enums.ts"
+  readOnlyIds  = true
+}
+
+datasource db {
+  provider = "sqlite"
+  // url must be set even though it is unused under the driverAdapters pattern
+  url      = "https://example.com/non-existant-database/required-but-unused-variable"
+}
+
+model users {
+  id                    String                  @id
+  email                 String                  @unique
+  name                  String
+  zip_code              String?
+  onboarding_completed  Boolean                 @default(false)
+  created_at            DateTime                @default(now())
+  updated_at            DateTime                @default(now()) @updatedAt
+
+  user_policy_interests user_policy_interests[]
+  user_representatives  user_representatives[]
+  podcasts              podcasts[]
+  user_news             user_news[]
+  user_sessions         user_sessions[]
+  widget_preferences    widget_preferences[]
+  engagement_metrics    engagement_metrics[]
+
+  @@index([email])
+  @@index([zip_code])
+}
+
+model user_policy_interests {
+  id           Int      @id @default(autoincrement())
+  user_id      String
+  policy_area  String
+  created_at   DateTime @default(now())
+
+  user         users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([policy_area])
+}
+
+model bills {
+  id                   String    @id
+  congress             Int
+  bill_type            String
+  bill_number          Int
+  title                String
+  sponsor_id           String?
+  introduced_date      DateTime?
+  latest_action_date   DateTime?
+  latest_action_text   String?
+  policy_area          String?
+  status               String?
+  full_text_url        String?
+  summary              String?
+  created_at           DateTime  @default(now())
+  updated_at           DateTime  @default(now()) @updatedAt
+
+  sponsor              members?  @relation(fields: [sponsor_id], references: [id])
+
+  @@index([congress])
+  @@index([policy_area])
+  @@index([status])
+  @@index([sponsor_id])
+  @@index([latest_action_date])
+}
+
+model members {
+  id                  String                 @id
+  bioguide_id         String                 @unique
+  first_name          String
+  last_name           String
+  party               String?
+  state               String
+  district            String?
+  chamber             String
+  image_url           String?
+  terms_served        Int                    @default(1)
+  current_term_start  DateTime?
+  current_term_end    DateTime?
+  created_at          DateTime               @default(now())
+  updated_at          DateTime               @default(now()) @updatedAt
+
+  bills               bills[]
+  user_representatives user_representatives[]
+
+  @@index([bioguide_id])
+  @@index([state])
+  @@index([chamber])
+  @@index([party])
+}
+
+model user_representatives {
+  id         Int      @id @default(autoincrement())
+  user_id    String
+  member_id  String
+  created_at DateTime @default(now())
+
+  user       users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  member     members  @relation(fields: [member_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, member_id])
+  @@index([user_id])
+}
+
+model podcasts {
+  id               String    @id
+  user_id          String?
+  podcast_type     String
+  title            String
+  description      String?
+  duration_seconds Int?
+  audio_url        String
+  transcript       String?
+  generated_at     DateTime  @default(now())
+
+  user             users?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([user_id])
+  @@index([podcast_type])
+  @@index([generated_at])
+}
+
+model news_articles {
+  id           String      @id
+  title        String
+  url          String      @unique
+  source       String?
+  published_at DateTime?
+  summary      String?
+  policy_area  String?
+  fetched_at   DateTime    @default(now())
+
+  user_news    user_news[]
+
+  @@index([policy_area])
+  @@index([published_at])
+}
+
+model user_news {
+  id              Int           @id @default(autoincrement())
+  user_id         String
+  article_id      String
+  relevance_score Float?
+  created_at      DateTime      @default(now())
+
+  user            users         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  article         news_articles @relation(fields: [article_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, article_id])
+  @@index([user_id])
+  @@index([relevance_score])
+}
+
+model user_sessions {
+  id         String   @id
+  user_id    String
+  token      String   @unique
+  expires_at DateTime
+  created_at DateTime @default(now())
+
+  user       users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([user_id])
+  @@index([expires_at])
+}
+
+model widget_preferences {
+  id          Int      @id @default(autoincrement())
+  user_id     String
+  widget_type String
+  enabled     Boolean  @default(true)
+  position    Int?
+  config      String?
+  updated_at  DateTime @default(now()) @updatedAt
+
+  user        users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, widget_type])
+  @@index([user_id])
+}
+
+model engagement_metrics {
+  id         Int      @id @default(autoincrement())
+  user_id    String
+  event_type String
+  event_data String?
+  created_at DateTime @default(now())
+
+  user       users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([event_type])
+  @@index([created_at])
+}
