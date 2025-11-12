@@ -6,9 +6,12 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { Database, Download, RefreshCw, Users, FileText, Building2 } from "lucide-react"
+import { Database, Download, RefreshCw, Users, FileText, Building2, Search, Eye } from "lucide-react"
+import { Progress } from "@/components/ui/progress"
 
 const ADMIN_API_URL = process.env.NEXT_PUBLIC_ADMIN_API_URL || "https://svc-01k9t94gnv5bcdwxqz22fzhh40.01k66gywmx8x4r0w31fdjjfekf.lmapp.run"
+// Use local API proxy to avoid CORS issues with Raindrop services
+const BILL_INDEXER_URL = "/api/bill-indexer"
 
 interface Stats {
   totals: {
@@ -93,6 +96,20 @@ interface InterestCategory {
   created_at: string
 }
 
+interface IndexingStatus {
+  indexed: number
+  total: number
+  remaining: number
+  percentComplete: number
+}
+
+interface IndexedBill {
+  name: string
+  path: string
+  size: number
+  uploaded: string
+}
+
 export default function AdminPage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [bills, setBills] = useState<Bill[]>([])
@@ -103,6 +120,12 @@ export default function AdminPage() {
   const [ingesting, setIngesting] = useState(false)
   const [liveUpdates, setLiveUpdates] = useState(false)
   const [selectedBillText, setSelectedBillText] = useState<{ id: string; title: string; text: string } | null>(null)
+  const [indexingStatus, setIndexingStatus] = useState<IndexingStatus | null>(null)
+  const [indexing, setIndexing] = useState(false)
+  const [indexedBills, setIndexedBills] = useState<IndexedBill[]>([])
+  const [loadingIndexed, setLoadingIndexed] = useState(false)
+  const [selectedBillContent, setSelectedBillContent] = useState<{key: string; content: string} | null>(null)
+  const [loadingContent, setLoadingContent] = useState(false)
 
   const fetchStats = async () => {
     try {
@@ -154,6 +177,72 @@ export default function AdminPage() {
     }
   }
 
+  const fetchIndexingStatus = async () => {
+    try {
+      const res = await fetch(`${BILL_INDEXER_URL}/status`)
+      const data = await res.json()
+      setIndexingStatus(data)
+    } catch (error) {
+      console.error("Failed to fetch indexing status:", error)
+    }
+  }
+
+  const fetchIndexedBills = async () => {
+    setLoadingIndexed(true)
+    try {
+      const res = await fetch(`${BILL_INDEXER_URL}/list`)
+      const data = await res.json()
+      setIndexedBills(data.bills || [])
+    } catch (error) {
+      console.error("Failed to fetch indexed bills:", error)
+    } finally {
+      setLoadingIndexed(false)
+    }
+  }
+
+  const viewBillContent = async (key: string) => {
+    setLoadingContent(true)
+    try {
+      const encodedKey = encodeURIComponent(key)
+      const res = await fetch(`${BILL_INDEXER_URL}/content/${encodedKey}`)
+      const data = await res.json()
+      if (data.content) {
+        setSelectedBillContent({ key, content: data.content })
+      } else {
+        alert("Failed to load bill content")
+      }
+    } catch (error) {
+      console.error("Failed to fetch bill content:", error)
+      alert("Failed to load bill content")
+    } finally {
+      setLoadingContent(false)
+    }
+  }
+
+  const triggerIndexing = async (limit: number = 100, offset: number = 0) => {
+    setIndexing(true)
+    try {
+      const res = await fetch(`${BILL_INDEXER_URL}/index`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ limit, offset, batchSize: 10 }),
+      })
+
+      if (res.ok) {
+        const data = await res.json()
+        alert(`Indexing complete! Indexed: ${data.indexed}, Failed: ${data.failed}`)
+        await Promise.all([fetchIndexingStatus(), fetchIndexedBills()])
+      } else {
+        alert(`Failed to trigger indexing: ${res.statusText}`)
+      }
+    } catch (error) {
+      console.error("Indexing error:", error)
+      alert("Failed to trigger indexing")
+    } finally {
+      setIndexing(false)
+    }
+  }
+
   const triggerIngestion = async (type: "bills" | "members" | "committees", congress?: number) => {
     setIngesting(true)
     try {
@@ -185,7 +274,7 @@ export default function AdminPage() {
   useEffect(() => {
     const loadData = async () => {
       setLoading(true)
-      await Promise.all([fetchStats(), fetchBills(), fetchMembers(), fetchCommittees(), fetchInterestCategories()])
+      await Promise.all([fetchStats(), fetchBills(), fetchMembers(), fetchCommittees(), fetchInterestCategories(), fetchIndexingStatus(), fetchIndexedBills()])
       setLoading(false)
     }
     loadData()
@@ -196,7 +285,7 @@ export default function AdminPage() {
     if (!liveUpdates) return
 
     const interval = setInterval(async () => {
-      await Promise.all([fetchStats(), fetchBills()])
+      await Promise.all([fetchStats(), fetchBills(), fetchIndexingStatus(), fetchIndexedBills()])
     }, 3000) // Poll every 3 seconds
 
     return () => clearInterval(interval)
@@ -231,14 +320,14 @@ export default function AdminPage() {
       <main className="flex-1 p-6">
         <div className="container mx-auto space-y-6">
           {/* Stats Overview */}
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Total Bills</CardTitle>
                 <FileText className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{stats?.totals.bills.toLocaleString() || 0}</div>
+                <div className="text-2xl font-bold">{(stats?.totals.bills ?? 0).toLocaleString()}</div>
                 <p className="text-xs text-muted-foreground">
                   Congress 119: {stats?.congressBreakdown.find((c) => c.congress === 119)?.count || 0}
                 </p>
@@ -254,7 +343,7 @@ export default function AdminPage() {
                 <Users className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{stats?.totals.members.toLocaleString() || 0}</div>
+                <div className="text-2xl font-bold">{(stats?.totals.members ?? 0).toLocaleString()}</div>
                 <p className="text-xs text-muted-foreground">Congressional representatives</p>
               </CardContent>
             </Card>
@@ -265,8 +354,25 @@ export default function AdminPage() {
                 <Building2 className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{stats?.totals.committees.toLocaleString() || 0}</div>
+                <div className="text-2xl font-bold">{(stats?.totals.committees ?? 0).toLocaleString()}</div>
                 <p className="text-xs text-muted-foreground">House and Senate committees</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">Bills Indexed</CardTitle>
+                <Search className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{(indexingStatus?.indexed ?? 0).toLocaleString()}</div>
+                <p className="text-xs text-muted-foreground">
+                  {indexingStatus?.percentComplete || 0}% complete
+                </p>
+                <Progress value={indexingStatus?.percentComplete || 0} className="mt-2 h-2" />
+                <p className="text-xs text-muted-foreground mt-1">
+                  {(indexingStatus?.remaining ?? 0).toLocaleString()} remaining
+                </p>
               </CardContent>
             </Card>
           </div>
@@ -295,28 +401,56 @@ export default function AdminPage() {
                   )}
                 </div>
               </div>
-              <div className="flex flex-wrap gap-2">
-                <Button onClick={() => triggerIngestion("bills", 119)} disabled={ingesting}>
-                  <Download className="mr-2 h-4 w-4" />
-                  Ingest Congress 119 Bills
-                </Button>
-                <Button onClick={() => triggerIngestion("bills", 118)} disabled={ingesting} variant="outline">
-                  <Download className="mr-2 h-4 w-4" />
-                  Ingest Congress 118 Bills
-                </Button>
-                <Button onClick={() => triggerIngestion("members")} disabled={ingesting} variant="outline">
-                  <Users className="mr-2 h-4 w-4" />
-                  Ingest Members
-                </Button>
-                <Button onClick={() => triggerIngestion("committees")} disabled={ingesting} variant="outline">
-                  <Building2 className="mr-2 h-4 w-4" />
-                  Ingest Committees
-                </Button>
+              <div className="space-y-3">
+                <div>
+                  <h3 className="text-sm font-medium mb-2">Congress Data Ingestion</h3>
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={() => triggerIngestion("bills", 119)} disabled={ingesting}>
+                      <Download className="mr-2 h-4 w-4" />
+                      Ingest Congress 119 Bills
+                    </Button>
+                    <Button onClick={() => triggerIngestion("bills", 118)} disabled={ingesting} variant="outline">
+                      <Download className="mr-2 h-4 w-4" />
+                      Ingest Congress 118 Bills
+                    </Button>
+                    <Button onClick={() => triggerIngestion("members")} disabled={ingesting} variant="outline">
+                      <Users className="mr-2 h-4 w-4" />
+                      Ingest Members
+                    </Button>
+                    <Button onClick={() => triggerIngestion("committees")} disabled={ingesting} variant="outline">
+                      <Building2 className="mr-2 h-4 w-4" />
+                      Ingest Committees
+                    </Button>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="text-sm font-medium mb-2">SmartBucket Indexing</h3>
+                  <div className="flex flex-wrap gap-2">
+                    <Button onClick={() => triggerIndexing(100, 0)} disabled={indexing} variant="default">
+                      <Search className="mr-2 h-4 w-4" />
+                      Index 100 Bills
+                    </Button>
+                    <Button onClick={() => triggerIndexing(500, 0)} disabled={indexing} variant="outline">
+                      <Search className="mr-2 h-4 w-4" />
+                      Index 500 Bills
+                    </Button>
+                    <Button onClick={fetchIndexingStatus} disabled={indexing} variant="outline" size="sm">
+                      <RefreshCw className="mr-2 h-4 w-4" />
+                      Refresh Status
+                    </Button>
+                  </div>
+                  {indexingStatus && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      {indexingStatus.indexed} of {indexingStatus.total} bills indexed ({indexingStatus.percentComplete}%)
+                    </p>
+                  )}
+                </div>
               </div>
-              {ingesting && (
+              {(ingesting || indexing) && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <RefreshCw className="h-4 w-4 animate-spin" />
-                  Ingestion in progress...
+                  {ingesting ? "Ingestion" : "Indexing"} in progress...
                 </div>
               )}
             </CardContent>
@@ -326,6 +460,7 @@ export default function AdminPage() {
           <Tabs defaultValue="bills" className="space-y-4">
             <TabsList>
               <TabsTrigger value="bills">Bills ({bills.length})</TabsTrigger>
+              <TabsTrigger value="indexed">Indexed Bills ({indexedBills.length})</TabsTrigger>
               <TabsTrigger value="members">Members ({members.length})</TabsTrigger>
               <TabsTrigger value="committees">Committees ({committees.length})</TabsTrigger>
               <TabsTrigger value="interests">Interest Categories ({interestCategories.length})</TabsTrigger>
@@ -406,6 +541,85 @@ export default function AdminPage() {
                   </Table>
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            <TabsContent value="indexed" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Indexed Bills in SmartBucket</CardTitle>
+                  <CardDescription>
+                    Bills currently indexed for semantic search ({indexedBills.length} bills)
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {loadingIndexed ? (
+                    <div className="flex items-center justify-center py-8">
+                      <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
+                      <span className="ml-2 text-muted-foreground">Loading indexed bills...</span>
+                    </div>
+                  ) : indexedBills.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      No bills have been indexed yet. Use the "Index Bills" buttons above to start indexing.
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Bill ID</TableHead>
+                          <TableHead>Congress</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Number</TableHead>
+                          <TableHead>Size</TableHead>
+                          <TableHead>Uploaded</TableHead>
+                          <TableHead>Path</TableHead>
+                          <TableHead>Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {indexedBills.map((bill) => {
+                          // Extract bill details from path like "bills/119/HR-1245.txt"
+                          const pathParts = bill.path.split('/')
+                          const congress = pathParts[1]
+                          const billFile = pathParts[2]?.replace('.txt', '') || ''
+                          const [billType, billNumber] = billFile.split('-')
+
+                          return (
+                            <TableRow key={bill.path}>
+                              <TableCell className="font-mono text-sm">{billFile}</TableCell>
+                              <TableCell>{congress}</TableCell>
+                              <TableCell>
+                                <Badge variant="outline">{billType}</Badge>
+                              </TableCell>
+                              <TableCell>{billNumber}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground">
+                                {(bill.size / 1024).toFixed(1)} KB
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground">
+                                {new Date(bill.uploaded).toLocaleString()}
+                              </TableCell>
+                              <TableCell className="text-xs text-muted-foreground font-mono">
+                                {bill.path}
+                              </TableCell>
+                              <TableCell>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => viewBillContent(bill.path)}
+                                  disabled={loadingContent}
+                                >
+                                  <Eye className="h-4 w-4 mr-1" />
+                                  View
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          )
+                        })}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+
             </TabsContent>
 
             <TabsContent value="members" className="space-y-4">
@@ -562,6 +776,28 @@ export default function AdminPage() {
                 className="text-gray-900 text-sm leading-relaxed whitespace-pre-wrap font-mono"
                 dangerouslySetInnerHTML={{ __html: selectedBillText.text }}
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Indexed Bill Content Modal */}
+      {selectedBillContent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setSelectedBillContent(null)}>
+          <div className="relative max-h-[90vh] w-[90vw] max-w-6xl overflow-hidden rounded-lg bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white p-4">
+              <div>
+                <h2 className="text-lg font-semibold">Indexed Bill Content</h2>
+                <p className="text-sm text-muted-foreground">{selectedBillContent.key}</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setSelectedBillContent(null)}>
+                Close
+              </Button>
+            </div>
+            <div className="overflow-y-auto p-6" style={{ maxHeight: 'calc(90vh - 80px)' }}>
+              <pre className="text-gray-900 text-xs leading-relaxed whitespace-pre-wrap font-mono">
+                {selectedBillContent.content}
+              </pre>
             </div>
           </div>
         </div>
