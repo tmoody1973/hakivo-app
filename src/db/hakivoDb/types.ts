@@ -199,6 +199,21 @@ export type widget_preferences = {
     config: string | null;
     updated_at: Generated<string>;
 };
+export type interest_categories = {
+    id: string;
+    name: string;
+    description: string;
+    icon: string;
+    keywords: string;  // JSON array
+    policy_areas: string;  // JSON array
+    color: string;
+    created_at: Generated<string>;
+};
+export type user_interests = {
+    user_id: string;
+    interest_category_id: string;
+    created_at: Generated<string>;
+};
 export type DB = {
     amendments: amendments;
     bill_actions: bill_actions;
@@ -209,11 +224,13 @@ export type DB = {
     bills: bills;
     committees: committees;
     engagement_metrics: engagement_metrics;
+    interest_categories: interest_categories;
     member_committees: member_committees;
     members: members;
     news_articles: news_articles;
     podcasts: podcasts;
     related_bills: related_bills;
+    user_interests: user_interests;
     user_news: user_news;
     user_policy_interests: user_policy_interests;
     user_representatives: user_representatives;

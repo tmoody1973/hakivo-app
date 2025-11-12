@@ -82,11 +82,23 @@ interface Committee {
   committee_type: string | null
 }
 
+interface InterestCategory {
+  id: string
+  name: string
+  description: string
+  icon: string
+  keywords: string[]
+  policyAreas: string[]
+  color: string
+  created_at: string
+}
+
 export default function AdminPage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [bills, setBills] = useState<Bill[]>([])
   const [members, setMembers] = useState<Member[]>([])
   const [committees, setCommittees] = useState<Committee[]>([])
+  const [interestCategories, setInterestCategories] = useState<InterestCategory[]>([])
   const [loading, setLoading] = useState(true)
   const [ingesting, setIngesting] = useState(false)
   const [liveUpdates, setLiveUpdates] = useState(false)
@@ -132,6 +144,16 @@ export default function AdminPage() {
     }
   }
 
+  const fetchInterestCategories = async () => {
+    try {
+      const res = await fetch(`${ADMIN_API_URL}/admin/interest-categories`)
+      const data = await res.json()
+      setInterestCategories(data.categories || [])
+    } catch (error) {
+      console.error("Failed to fetch interest categories:", error)
+    }
+  }
+
   const triggerIngestion = async (type: "bills" | "members" | "committees", congress?: number) => {
     setIngesting(true)
     try {
@@ -163,7 +185,7 @@ export default function AdminPage() {
   useEffect(() => {
     const loadData = async () => {
       setLoading(true)
-      await Promise.all([fetchStats(), fetchBills(), fetchMembers(), fetchCommittees()])
+      await Promise.all([fetchStats(), fetchBills(), fetchMembers(), fetchCommittees(), fetchInterestCategories()])
       setLoading(false)
     }
     loadData()
@@ -306,6 +328,7 @@ export default function AdminPage() {
               <TabsTrigger value="bills">Bills ({bills.length})</TabsTrigger>
               <TabsTrigger value="members">Members ({members.length})</TabsTrigger>
               <TabsTrigger value="committees">Committees ({committees.length})</TabsTrigger>
+              <TabsTrigger value="interests">Interest Categories ({interestCategories.length})</TabsTrigger>
             </TabsList>
 
             <TabsContent value="bills" className="space-y-4">
@@ -458,6 +481,57 @@ export default function AdminPage() {
                           <TableCell className="text-sm">{committee.committee_type || "—"}</TableCell>
                           <TableCell className="font-mono text-xs text-muted-foreground">
                             {committee.id}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="interests" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Interest Categories</CardTitle>
+                  <CardDescription>12 citizen-friendly categories that map to Congress.gov policy areas</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Icon</TableHead>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>Keywords</TableHead>
+                        <TableHead>Policy Areas</TableHead>
+                        <TableHead>Color</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {interestCategories.map((category) => (
+                        <TableRow key={category.id}>
+                          <TableCell className="text-2xl">{category.icon}</TableCell>
+                          <TableCell className="font-medium">{category.name}</TableCell>
+                          <TableCell className="max-w-xs text-sm text-muted-foreground">
+                            {category.description}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary">{category.keywords.length} keywords</Badge>
+                            <div className="mt-1 text-xs text-muted-foreground max-w-xs truncate">
+                              {category.keywords.slice(0, 5).join(', ')}...
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{category.policyAreas.length} areas</Badge>
+                            <div className="mt-1 text-xs text-muted-foreground max-w-xs">
+                              {category.policyAreas.join(', ')}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={`bg-${category.color}-100 text-${category.color}-800 border-${category.color}-300`}>
+                              {category.color}
+                            </Badge>
                           </TableCell>
                         </TableRow>
                       ))}

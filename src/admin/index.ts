@@ -74,6 +74,11 @@ export default class extends Service<Env> {
         return await this.handleGetCommittees(corsHeaders);
       }
 
+      // Interest categories endpoint
+      if (path === '/admin/interest-categories') {
+        return await this.handleGetInterestCategories(corsHeaders);
+      }
+
       // Bill text chunks endpoint
       if (path.match(/^\/admin\/bills\/[^/]+\/chunks$/)) {
         const billId = path.replace('/admin/bills/', '').replace('/chunks', '');
@@ -516,6 +521,25 @@ export default class extends Service<Env> {
       .execute();
 
     return new Response(JSON.stringify({ committees }), { headers });
+  }
+
+  private async handleGetInterestCategories(headers: Record<string, string>): Promise<Response> {
+    const db = this.getDb();
+
+    const rawCategories = await db
+      .selectFrom('interest_categories')
+      .selectAll()
+      .orderBy('name', 'asc')
+      .execute();
+
+    // Parse JSON fields from strings to arrays
+    const categories = rawCategories.map(category => ({
+      ...category,
+      keywords: JSON.parse(category.keywords),
+      policyAreas: JSON.parse(category.policy_areas),
+    }));
+
+    return new Response(JSON.stringify({ categories }), { headers });
   }
 
   private async handleTriggerIngestion(
