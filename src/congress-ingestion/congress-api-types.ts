@@ -12,6 +12,9 @@ export interface CongressApiResponse<T> {
   committees?: T[];
   committee?: T;
   textVersions?: BillTextVersion[];
+  actions?: any[];
+  cosponsors?: any[];
+  subjects?: any;
   pagination?: {
     count: number;
     next?: string;

@@ -12,7 +12,6 @@ export interface Env {
   API_GATEWAY: ServiceStub<import('../api-gateway/index.js').default>;
   AUTH_SERVICE: ServiceStub<import('../auth-service/index.js').default>;
   BILL_CHAT: ServiceStub<import('../bill-chat/index.js').default>;
-  BILL_STORAGE: ServiceStub<import('../bill-storage/index.js').default>;
   BILLS_BUCKET: SmartBucket;
   CONGRESS_INGESTION: ServiceStub<import('../congress-ingestion/index.js').default>;
   HAKIVO_DB: SqlDatabase;
@@ -23,4 +22,5 @@ export interface Env {
   REPRESENTATIVE_LOOKUP: ServiceStub<import('../representative-lookup/index.js').default>;
   SESSION_CACHE: KvCache;
   tracer: Tracer;
+  VOICE_AGENT: ServiceStub<import('../voice-agent/index.js').default>;
 }

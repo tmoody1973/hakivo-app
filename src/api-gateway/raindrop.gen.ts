@@ -5,11 +5,13 @@ export interface Env {
   _raindrop: {
     app: App;
   };
+  ADMIN: ServiceStub<import('../admin/index.js').default>;
   AI: Ai;
   annotation: Annotation<Omit<MRNObject, 'type' | 'applicationName' | 'versionId'>>;
   API_CACHE: KvCache;
   AUTH_SERVICE: ServiceStub<import('../auth-service/index.js').default>;
   BILL_CHAT: ServiceStub<import('../bill-chat/index.js').default>;
+  BILL_STORAGE: ServiceStub<import('../bill-storage/index.js').default>;
   BILLS_BUCKET: SmartBucket;
   CONGRESS_INGESTION: ServiceStub<import('../congress-ingestion/index.js').default>;
   HAKIVO_DB: SqlDatabase;

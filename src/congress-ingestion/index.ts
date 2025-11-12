@@ -25,6 +25,7 @@ interface IngestBillsRequest {
   congress?: number;
   limit?: number;
   fullSync?: boolean;
+  bills?: any[]; // Complete bill data from external script
 }
 
 interface IngestMembersRequest {
@@ -104,18 +105,142 @@ export default class extends Service<Env> {
 
   private async handleIngestBills(request: Request): Promise<Response> {
     const body: IngestBillsRequest = (await request.json()) as IngestBillsRequest;
-    const apiClient = await this.getApiClient();
-    const congress = body.congress || apiClient.getCurrentCongress();
-    const limit = body.limit || 100;
 
-    this.env.logger.info(`Starting bill ingestion for Congress ${congress}`, { limit });
+    // Check if complete bill data is provided (external script mode)
+    if (body.bills && Array.isArray(body.bills) && body.bills.length > 0) {
+      return await this.handleExternalScriptIngestion(body);
+    }
+
+    // Otherwise, use legacy API-fetching mode
+    return await this.handleLegacyIngestion(body);
+  }
+
+  /**
+   * NEW: Handle complete bill data from external script
+   * This is FAST - just stores pre-fetched data, no API calls
+   */
+  private async handleExternalScriptIngestion(body: IngestBillsRequest): Promise<Response> {
+    this.env.logger.info(`📦 Receiving ${body.bills!.length} complete bills from external script`);
 
     const db = this.getDb();
     let billsProcessed = 0;
     let errors = 0;
 
     try {
-      // Fetch bills
+      // Process each complete bill
+      for (const completeBill of body.bills!) {
+        try {
+          const billId = generateBillId(
+            completeBill.congress,
+            completeBill.type,
+            completeBill.number
+          );
+
+          this.env.logger.info(`📝 Storing ${billId}...`);
+
+          // 1. Store basic bill data
+          const bill = transformBillToDb(completeBill);
+
+          // Add policy area from subjects if available
+          if (completeBill.subjects?.policyArea?.name) {
+            (bill as any).policy_area = completeBill.subjects.policyArea.name;
+          }
+
+          // Add summary if available
+          if (completeBill.detail?.summaries && completeBill.detail.summaries.length > 0) {
+            (bill as any).summary = extractBillSummary(completeBill.detail.summaries);
+          }
+
+          // Add full text if available
+          if (completeBill.fullText) {
+            (bill as any).full_text = completeBill.fullText;
+            (bill as any).full_text_url = buildBillTextUrl(
+              completeBill.congress,
+              completeBill.type,
+              completeBill.number
+            );
+          }
+
+          await db
+            .insertInto('bills')
+            .values(bill)
+            .onConflict((oc) => oc.column('id').doUpdateSet(bill))
+            .execute();
+
+          // 2. Store cosponsors in batch
+          if (completeBill.cosponsors && completeBill.cosponsors.length > 0) {
+            const cosponsors = transformCosponsorsToDb(billId, completeBill.cosponsors);
+            for (const cosponsor of cosponsors) {
+              await db
+                .insertInto('bill_cosponsors')
+                .values(cosponsor)
+                .onConflict((oc) => oc.columns(['bill_id', 'member_id']).doNothing())
+                .execute();
+            }
+            this.env.logger.info(`  ✅ Stored ${cosponsors.length} cosponsors`);
+          }
+
+          // 3. Store actions in batch
+          if (completeBill.actions && completeBill.actions.length > 0) {
+            const actions = transformActionsToDb(billId, completeBill.actions);
+            for (const action of actions) {
+              await db.insertInto('bill_actions').values(action).execute();
+            }
+            this.env.logger.info(`  ✅ Stored ${actions.length} actions`);
+          }
+
+          // 4. Store subjects in batch
+          if (completeBill.subjects) {
+            const subjects = transformSubjectsToDb(billId, completeBill.subjects);
+            for (const subject of subjects) {
+              await db.insertInto('bill_subjects').values(subject).execute();
+            }
+            this.env.logger.info(`  ✅ Stored ${subjects.length} subjects`);
+          }
+
+          billsProcessed++;
+          this.env.logger.info(`✅ Completed ${billId}`);
+
+        } catch (error) {
+          errors++;
+          this.env.logger.error(`❌ Error storing bill:`, error as any);
+        }
+      }
+
+      return Response.json({
+        success: true,
+        message: `Stored ${billsProcessed} complete bills`,
+        stats: { billsProcessed, errors },
+      });
+
+    } catch (error) {
+      this.env.logger.error('External script ingestion failed:', error as any);
+      throw error;
+    }
+  }
+
+  /**
+   * LEGACY: Fetch from API and store (kept for backward compatibility)
+   * WARNING: This has timeout issues for full sync
+   */
+  private async handleLegacyIngestion(body: IngestBillsRequest): Promise<Response> {
+    const apiClient = await this.getApiClient();
+    const congress = body.congress || apiClient.getCurrentCongress();
+    const limit = body.limit || 100;
+    const fullSync = body.fullSync || false;
+
+    this.env.logger.info(`Starting bill ingestion for Congress ${congress}`, {
+      limit,
+      fullSync,
+      mode: fullSync ? 'FULL (with details)' : 'BASIC (metadata only)'
+    });
+
+    const db = this.getDb();
+    let billsProcessed = 0;
+    let errors = 0;
+
+    try {
+      // Fetch bills list only
       const billsResponse = await apiClient.getBills({ congress, limit });
 
       if (!billsResponse.bills || billsResponse.bills.length === 0) {
@@ -126,133 +251,29 @@ export default class extends Service<Env> {
         });
       }
 
-      // Process each bill
+      // Store basic metadata only (no detailed fetching)
       for (const apiBill of billsResponse.bills) {
         try {
           const billId = generateBillId(apiBill.congress, apiBill.type, apiBill.number);
-
-          // Transform and upsert bill
           const bill = transformBillToDb(apiBill);
+
           await db
             .insertInto('bills')
             .values(bill)
             .onConflict((oc) => oc.column('id').doUpdateSet(bill))
             .execute();
 
-          // Fetch and store detailed information
-          const billDetail = await apiClient.getBillDetail(
-            apiBill.congress,
-            apiBill.type,
-            apiBill.number
-          );
-
-          if (billDetail.bill) {
-            const detailedBill = billDetail.bill;
-
-            // Store cosponsors
-            if (detailedBill.cosponsors && detailedBill.cosponsors.length > 0) {
-              const cosponsors = transformCosponsorsToDb(billId, detailedBill.cosponsors);
-              for (const cosponsor of cosponsors) {
-                await db
-                  .insertInto('bill_cosponsors')
-                  .values(cosponsor)
-                  .onConflict((oc) => oc.columns(['bill_id', 'member_id']).doNothing())
-                  .execute();
-              }
-            }
-
-            // Store actions
-            if (detailedBill.actions && detailedBill.actions.length > 0) {
-              const actions = transformActionsToDb(billId, detailedBill.actions);
-              for (const action of actions) {
-                await db.insertInto('bill_actions').values(action).execute();
-              }
-            }
-
-            // Store subjects and extract policy area
-            if (detailedBill.subjects) {
-              const subjects = transformSubjectsToDb(billId, detailedBill.subjects);
-              for (const subject of subjects) {
-                await db.insertInto('bill_subjects').values(subject).execute();
-              }
-            }
-
-            // Update bill with summary, full text URL, policy area, and full text content
-            let updates: any = { updated_at: new Date().toISOString() };
-
-            // Extract and store policy area in bills table
-            if (detailedBill.subjects?.policyArea?.name) {
-              updates.policy_area = detailedBill.subjects.policyArea.name;
-            }
-
-            if (detailedBill.summaries && detailedBill.summaries.length > 0) {
-              const summary = extractBillSummary(detailedBill.summaries);
-              if (summary) {
-                updates.summary = summary;
-              }
-            }
-
-            // Build full text URL
-            const fullTextUrl = buildBillTextUrl(
-              apiBill.congress,
-              apiBill.type,
-              apiBill.number
-            );
-            updates.full_text_url = fullTextUrl;
-
-            // Fetch bill text versions and get formatted text
-            try {
-              const textResponse = await apiClient.getBillText(
-                apiBill.congress,
-                apiBill.type,
-                apiBill.number
-              );
-
-              if (textResponse.textVersions && textResponse.textVersions.length > 0) {
-                // Find the formatted text (HTML) version
-                for (const version of textResponse.textVersions) {
-                  if (version.formats) {
-                    const formattedText = version.formats.find(
-                      (f: any) => f.type === 'Formatted Text'
-                    );
-
-                    if (formattedText && formattedText.url) {
-                      // Fetch the actual HTML content using globalThis.fetch
-                      const textContent = await globalThis.fetch(formattedText.url);
-                      if (textContent.ok) {
-                        const html = await textContent.text();
-                        updates.full_text = html;
-                        break; // Use the first formatted text version found
-                      }
-                    }
-                  }
-                }
-              }
-            } catch (textError) {
-              // Log error but continue - text fetching is not critical
-              this.env.logger.error(`Failed to fetch bill text for ${billId}:`, textError as any);
-            }
-
-            if (Object.keys(updates).length > 1) {
-              await db
-                .updateTable('bills')
-                .set(updates)
-                .where('id', '=', billId)
-                .execute();
-            }
-          }
-
           billsProcessed++;
-          this.env.logger.info(`Processed bill ${billId}`);
+          this.env.logger.info(`✅ Stored ${billId}`);
         } catch (error) {
           errors++;
-          this.env.logger.error(`Error processing bill:`, error as any);
+          this.env.logger.error(`❌ Error processing bill:`, error as any);
         }
       }
 
       const response: IngestionResponse = {
         success: true,
-        message: `Ingested ${billsProcessed} bills for Congress ${congress}`,
+        message: `Ingested ${billsProcessed} bills (basic metadata)`,
         stats: { billsProcessed, errors },
       };
 

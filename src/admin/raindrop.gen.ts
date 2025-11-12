@@ -5,7 +5,6 @@ export interface Env {
   _raindrop: {
     app: App;
   };
-  ADMIN: ServiceStub<import('../admin/index.js').default>;
   AI: Ai;
   annotation: Annotation<Omit<MRNObject, 'type' | 'applicationName' | 'versionId'>>;
   API_CACHE: KvCache;
@@ -23,4 +22,5 @@ export interface Env {
   REPRESENTATIVE_LOOKUP: ServiceStub<import('../representative-lookup/index.js').default>;
   SESSION_CACHE: KvCache;
   tracer: Tracer;
+  VOICE_AGENT: ServiceStub<import('../voice-agent/index.js').default>;
 }

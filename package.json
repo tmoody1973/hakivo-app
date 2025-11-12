@@ -12,7 +12,8 @@
     "create-migration": "npx ts-node ./scripts/create_migration.mts",
     "clean-seed": "find ./db -name '*seed*' -type f -delete",
     "seed:createSql": "npx ts-node ./scripts/seed-sql.mts",
-    "render-db": "pnpm run clean-seed && pnpm run create-migration && pnpm run seed:createSql"
+    "render-db": "pnpm run clean-seed && pnpm run create-migration && pnpm run seed:createSql",
+    "fetch:bills": "tsx scripts/fetch-bills.ts"
   },
   "devDependencies": {
     "@liquidmetal-ai/in-memory-d1": "^1.0.7",
@@ -22,6 +23,7 @@
     "prisma-kysely": "^1.8.0",
     "shx": "^0.4.0",
     "ts-node": "^10",
+    "tsx": "^4.20.6",
     "typescript": "^5.0.4",
     "typescript-eslint": "^8.7.0",
     "undici-types": "^7.16.0",

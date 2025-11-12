@@ -46,6 +46,14 @@ export type bill_subjects = {
     subject: string;
     created_at: Generated<string>;
 };
+export type bill_text_chunks = {
+    id: GeneratedAlways<number>;
+    bill_id: string;
+    chunk_index: number;
+    chunk_text: string;
+    chunk_size: number;
+    created_at: Generated<string>;
+};
 export type bills = {
     id: string;
     congress: number;
@@ -59,6 +67,7 @@ export type bills = {
     policy_area: string | null;
     status: string | null;
     full_text_url: string | null;
+    full_text: string | null;
     summary: string | null;
     origin_chamber: string | null;
     update_date: string | null;
@@ -196,6 +205,7 @@ export type DB = {
     bill_committees: bill_committees;
     bill_cosponsors: bill_cosponsors;
     bill_subjects: bill_subjects;
+    bill_text_chunks: bill_text_chunks;
     bills: bills;
     committees: committees;
     engagement_metrics: engagement_metrics;

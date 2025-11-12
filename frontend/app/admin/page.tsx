@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Database, Download, RefreshCw, Users, FileText, Building2 } from "lucide-react"
 
-const ADMIN_API_URL = process.env.NEXT_PUBLIC_ADMIN_API_URL || "https://svc-01k9ssx7tazc5e34ccs4yt1gqn.01k66gywmx8x4r0w31fdjjfekf.lmapp.run"
+const ADMIN_API_URL = process.env.NEXT_PUBLIC_ADMIN_API_URL || "https://svc-01k9t94gnv5bcdwxqz22fzhh40.01k66gywmx8x4r0w31fdjjfekf.lmapp.run"
 
 interface Stats {
   totals: {
@@ -41,6 +41,28 @@ interface Bill {
   latest_action_date: string | null
   latest_action_text: string | null
   policy_area: string | null
+  summary: string | null
+  full_text: string | null
+  full_text_url: string | null
+  _metadata?: {
+    cosponsors_count: number
+    actions_count: number
+    subjects_count: number
+  }
+  cosponsors?: Array<{
+    bioguide_id: string
+    first_name: string
+    last_name: string
+    party: string
+    state: string
+    sponsored_date: string
+  }>
+  actions?: Array<{
+    action_date: string
+    action_text: string
+    action_type: string
+  }>
+  subjects?: string[]
 }
 
 interface Member {
@@ -67,6 +89,8 @@ export default function AdminPage() {
   const [committees, setCommittees] = useState<Committee[]>([])
   const [loading, setLoading] = useState(true)
   const [ingesting, setIngesting] = useState(false)
+  const [liveUpdates, setLiveUpdates] = useState(false)
+  const [selectedBillText, setSelectedBillText] = useState<{ id: string; title: string; text: string } | null>(null)
 
   const fetchStats = async () => {
     try {
@@ -145,6 +169,17 @@ export default function AdminPage() {
     loadData()
   }, [])
 
+  // Live updates polling
+  useEffect(() => {
+    if (!liveUpdates) return
+
+    const interval = setInterval(async () => {
+      await Promise.all([fetchStats(), fetchBills()])
+    }, 3000) // Poll every 3 seconds
+
+    return () => clearInterval(interval)
+  }, [liveUpdates])
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -218,9 +253,26 @@ export default function AdminPage() {
           <Card>
             <CardHeader>
               <CardTitle>Data Ingestion Controls</CardTitle>
-              <CardDescription>Trigger Congress.gov API data sync</CardDescription>
+              <CardDescription>Trigger Congress.gov API data sync and monitor live updates</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={() => setLiveUpdates(!liveUpdates)}
+                    variant={liveUpdates ? "default" : "outline"}
+                    size="sm"
+                  >
+                    <RefreshCw className={`mr-2 h-4 w-4 ${liveUpdates ? "animate-spin" : ""}`} />
+                    {liveUpdates ? "Live Updates ON" : "Live Updates OFF"}
+                  </Button>
+                  {liveUpdates && (
+                    <span className="text-xs text-muted-foreground">
+                      Refreshing every 3 seconds
+                    </span>
+                  )}
+                </div>
+              </div>
               <div className="flex flex-wrap gap-2">
                 <Button onClick={() => triggerIngestion("bills", 119)} disabled={ingesting}>
                   <Download className="mr-2 h-4 w-4" />
@@ -270,6 +322,11 @@ export default function AdminPage() {
                         <TableHead>Title</TableHead>
                         <TableHead>Congress</TableHead>
                         <TableHead>Policy Area</TableHead>
+                        <TableHead>Cosponsors</TableHead>
+                        <TableHead>Actions</TableHead>
+                        <TableHead>Subjects</TableHead>
+                        <TableHead>Summary</TableHead>
+                        <TableHead>Full Text</TableHead>
                         <TableHead>Latest Action</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -284,7 +341,38 @@ export default function AdminPage() {
                             <Badge variant="outline">{bill.congress}</Badge>
                           </TableCell>
                           <TableCell className="text-sm">{bill.policy_area || "—"}</TableCell>
+                          <TableCell className="text-center">
+                            <Badge variant="secondary">{bill._metadata?.cosponsors_count || 0}</Badge>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Badge variant="secondary">{bill._metadata?.actions_count || 0}</Badge>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Badge variant="secondary">{bill._metadata?.subjects_count || 0}</Badge>
+                          </TableCell>
+                          <TableCell className="max-w-xs truncate text-xs text-muted-foreground">
+                            {bill.summary ? bill.summary.substring(0, 100) + "..." : "—"}
+                          </TableCell>
                           <TableCell className="text-xs text-muted-foreground">
+                            {bill.full_text ? (
+                              <Badge
+                                variant="default"
+                                className="bg-green-600 cursor-pointer hover:bg-green-700"
+                                onClick={() => setSelectedBillText({
+                                  id: bill.id,
+                                  title: bill.title,
+                                  text: bill.full_text!
+                                })}
+                              >
+                                {Math.round(bill.full_text.length / 1024)}KB
+                              </Badge>
+                            ) : bill.full_text_url ? (
+                              <a href={bill.full_text_url} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline">
+                                Link
+                              </a>
+                            ) : "—"}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                             {bill.latest_action_date
                               ? new Date(bill.latest_action_date).toLocaleDateString()
                               : "—"}
@@ -381,6 +469,29 @@ export default function AdminPage() {
           </Tabs>
         </div>
       </main>
+
+      {/* Full Text Modal */}
+      {selectedBillText && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setSelectedBillText(null)}>
+          <div className="relative max-h-[90vh] w-[90vw] max-w-6xl overflow-hidden rounded-lg bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 z-10 flex items-center justify-between border-b bg-white p-4">
+              <div>
+                <h2 className="text-lg font-semibold">{selectedBillText.id}</h2>
+                <p className="text-sm text-muted-foreground">{selectedBillText.title}</p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => setSelectedBillText(null)}>
+                Close
+              </Button>
+            </div>
+            <div className="overflow-y-auto p-6" style={{ maxHeight: 'calc(90vh - 80px)' }}>
+              <div
+                className="text-gray-900 text-sm leading-relaxed whitespace-pre-wrap font-mono"
+                dangerouslySetInnerHTML={{ __html: selectedBillText.text }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

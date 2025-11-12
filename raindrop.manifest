@@ -15,6 +15,10 @@ application "hakivo-app" {
     visibility = "public"  // Temporarily public for debugging
   }
 
+  service "bill-storage" {
+    visibility = "public"  // Public for external script access
+  }
+
   service "podcast-generator" {
     visibility = "private"
   }
